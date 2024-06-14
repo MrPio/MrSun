@@ -21,16 +21,25 @@ from mr_vol import average_vol
 
 TIME_SPAN = 12
 
+stop_ascolto = datetime.now()
+stop = True
+recognizer = sr.Recognizer()
+microphone = sr.Microphone()
+
 
 def esci():
     time.sleep(3)
     os._exit(1)
 
 
-stop_ascolto = datetime.now()
-
-
 def vai_in_ascolto():
+    if stop:
+        beeps[1].play()
+        try:
+            listen(True)
+        except Exception as e:
+            print(e)
+        return
     def vai_in_sleep():
         while (stop_ascolto - datetime.now()).total_seconds() > 0:
             time.sleep(0.5)
@@ -55,17 +64,23 @@ def vai_in_sleep():
     stop_ascolto = datetime.now()
 
 
-def set_brightness(x: str):
+def stop_tutto():
+    beeps[2].play(1)
+    global stop
+    stop = True
+
+
+def set_brightness(x):
     try:
-        num = int(re.search(r'\d+', x).group())
+        num = int(re.search(r'\d+', x[0]).group())
     except:
         num = let2num(x.split('volumea')[1])
     screen_brightness_control.set_brightness(value=num)
 
 
-def set_volume(x: str):
+def set_volume(x):
     try:
-        num = int(re.search(r'\d+', x).group())
+        num = int(re.search(r'\d+', x[0]).group())
     except:
         num = let2num(x.split('volumea')[1])
     db_vol = -63.5
@@ -89,12 +104,23 @@ def rimani_attivo():
 
 
 # This function is from Real Python: https://realpython.com/python-speech-recognition/#putting-it-all-together-a-guess-the-word-game
-def recognize_speech_from_mic(recognizer: sr.Recognizer, microphone) -> dict:
+def recognize_speech_from_mic(recognizer: sr.Recognizer, microphone,force=False) -> dict:
+    response = {"success": True,
+                "error": None,
+                "transcription": None}
+    if stop and not force:
+        print('Stoppo tutto!')
+        return response
     # adjust the recognizer sensitivity to ambient noise and record audio from the microphone
     avg = 0
     # time.sleep(1)
     with microphone as source:
         while avg < 10:
+            if force:
+                recognizer.adjust_for_ambient_noise(source,duration=0.5)
+            if stop and not force:
+                print('Stoppo tutto!')
+                return response
             try:
                 # beeps[1].play()
                 # time.sleep(0.5)
@@ -102,15 +128,14 @@ def recognize_speech_from_mic(recognizer: sr.Recognizer, microphone) -> dict:
             except:
                 print('nothing')
                 continue
+            if force:
+                break
             with open('mic.wav', 'wb') as w:
                 w.write(audio.get_wav_data())
             avg = average_vol('mic.wav')
             print(avg)
+
     print('chiamo le api')
-    # set up the response object
-    response = {"success": True,
-                "error": None,
-                "transcription": None}
 
     # try recognizing the speech in the recording if a RequestError or UnknownValueError exception is caught, update the response object accordingly
     try:
@@ -152,7 +177,8 @@ start_recognizer = [
 my_phrases = [
     [['ciao'], 'Ciao, come stai?', None],
     [['chisei'], 'Sono mister san.', None],
-    [['cheora'], None, lambda _: engine.say('Sono le '+datetime.now().strftime('%HH e %MM').lower().replace('h','').replace('m',''))],
+    [['cheor'], None,
+     lambda x: x[1].say('Sono le ' + datetime.now().strftime('%HH e %MM').lower().replace('h', '').replace('m', ''))],
 
     [['esci'], 'Mister san si sta chiudendo...', lambda _: esci()],
     [['luminosit'], None, lambda x: set_brightness(x)],
@@ -161,54 +187,67 @@ my_phrases = [
     [['rimaniattivo', 'rimaniinascolto'], 'Rimango attivo', lambda _: rimani_attivo()],
     [['disattivati', 'nonmiascoltare', 'sleep'], 'Vado in sleep', lambda _: vai_in_sleep()],
 
-    [['obs', 'ubs', 'regestratore'], None, lambda _: os.startfile('links\obs.lnk')],
+    [['obs', 'ubs', 'regestratore','ovs'], None, lambda _: os.startfile('links\obs.lnk')],
     [['team', 'microsoft', 'riunion'], None, lambda _: os.startfile('links\Microsoft Teams (work or school).lnk')],
     [['mozil', 'browser', 'firef'], None, lambda _: os.startfile('links\Firefox.lnk')],
     [['esplor'], None, lambda _: os.startfile('links\File Explorer.lnk')],
-    [['studio','visual'], None, lambda _: os.startfile('links\Visual Studio 2022 (2).lnk')]
+    [['studio', 'visual'], None, lambda _: os.startfile('links\Visual Studio 2022 (2).lnk')]
 ]
 unknown_command_phrase = ["Non ho capito", None]
 
-engine = pyttsx3.init()
-in_ascolto = False
-
-def mr_rec_start():
+def new_voice():
+    engine = pyttsx3.init()
     it_voice_id_m = "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech\Voices\Tokens\TTS_MS_IT-IT_COSIMO_11.0"
     engine.setProperty('voice', it_voice_id_m)
     engine.setProperty('rate', 175)
+    return engine
+
+engine = new_voice()
+
+in_ascolto = False
+
+
+def listen(force=False):
+    response = recognize_speech_from_mic(recognizer, microphone,force)
+
+    transcription: str = response['transcription']
+    if transcription is None:
+        return
+    transcription = re.sub(r'\W+', '', transcription).strip().lower()
+    print(f'--> {transcription} <--')
+    if transcription in start_recognizer:
+        vai_in_ascolto()
+        return
+    if not in_ascolto and not force:
+        print('ignoro perchè sono in sleep...')
+        return
+    print('sto per processare: ...')
+    global stop_ascolto
+    stop_ascolto += timedelta(seconds=TIME_SPAN)
+    for keys, answer, action in my_phrases:
+        for key in keys:
+            if key in transcription:
+                beeps[0].play()
+                if answer is not None:
+                    engine.say(answer)
+                if action is not None:
+                    Thread(target=action, args=[[transcription,engine]]).start()
+
+                break
+
+
+def mr_rec_start():
+    global stop
+    stop=False
+
     # beeps[1].play(1)
     # engine.say("Mister san si sta avviando...")
 
-    recognizer = sr.Recognizer()
-    microphone = sr.Microphone()
     with microphone as source:
-        recognizer.adjust_for_ambient_noise(microphone)
+        recognizer.adjust_for_ambient_noise(source)
 
     while True:
-        engine.runAndWait()
-        response = recognize_speech_from_mic(recognizer, microphone)
-
-        transcription: str = response['transcription']
-        if transcription is None:
-            continue
-        transcription = re.sub(r'\W+', '', transcription).strip().lower()
-        print(f'--> {transcription} <--')
-        if transcription in start_recognizer:
-            vai_in_ascolto()
-            continue
-        if not in_ascolto:
-            print('ignoro perchè sono in sleep...')
-            continue
-        print('sto per processare: ...')
-        global stop_ascolto
-        stop_ascolto += timedelta(seconds=TIME_SPAN)
-        for keys, answer, action in my_phrases:
-            for key in keys:
-                if key in transcription:
-                    beeps[0].play()
-                    if answer is not None:
-                        # engine = pyttsx3.init()
-                        engine.say(answer)
-                    if action is not None:
-                        Thread(target=action, args=[transcription]).start()
-                    break
+        if not stop:
+            listen()
+        else:
+            time.sleep(3)

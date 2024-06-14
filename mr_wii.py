@@ -13,7 +13,7 @@ from comtypes import CLSCTX_ALL
 from pycaw.api.endpointvolume import IAudioEndpointVolume
 from pycaw.utils import AudioUtilities
 
-from mr_rec import vai_in_ascolto, beeps
+from mr_rec import vai_in_ascolto, beeps, listen
 
 UI_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,7 +34,10 @@ def set_volume(num):
 
 
 def set_brightness(num):
-    screen_brightness_control.set_brightness(value=num)
+    try:
+        screen_brightness_control.set_brightness(value=num)
+    except:
+        pass
 
 
 def notifica(titolo: str, contenuto: str, icon) -> None:
@@ -79,6 +82,7 @@ def play_pause_key():
     press_special_key(0xB3)
 
 def mr_wii_start():
+    pyautogui.FAILSAFE=False
     last_command = time.time_ns()
     pygame.init()
     j = None
@@ -89,7 +93,7 @@ def mr_wii_start():
     j.init()
 
     axis_1_mode = True
-    arrows_mode = True
+    arrows_mode = 'desktop'
     while 1:
         pygame.event.pump()
 
@@ -112,26 +116,36 @@ def mr_wii_start():
                 set_brightness(100-(angle_norm * 100))
 
         if round(j.get_axis(2)) == -1:  # Up key
-            if arrows_mode:
+            if arrows_mode=='desktop':
                 pyautogui.hotkey('ctrl', 'win', 'left')
-            else:
+            elif arrows_mode == 'firefox':
                 pyautogui.hotkey('ctrl', 'shift', 'tab')
-        elif round(j.get_axis(2)) == 1:  # Down key
-            if arrows_mode:
-                pyautogui.hotkey('ctrl', 'win', 'right')
-            else:
-                pyautogui.hotkey('ctrl', 'tab')
-        elif round(j.get_axis(3)) == -1:  # Right
-            if arrows_mode:
-                pyautogui.hotkey('ctrl', 'win', 'd')
-            else:
-                pyautogui.hotkey('ctrl', 'shift', 't')
-        elif round(j.get_axis(3)) == 1:  # Left
-            if arrows_mode:
-                pyautogui.hotkey('ctrl', 'win', 'f4')
-            else:
-                pyautogui.hotkey('ctrl', 'w')
+            elif arrows_mode == 'vlc':
+                pyautogui.press('left')
 
+        elif round(j.get_axis(2)) == 1:  # Down key
+            if arrows_mode=='desktop':
+                pyautogui.hotkey('ctrl', 'win', 'right')
+            elif arrows_mode == 'firefox':
+                pyautogui.hotkey('ctrl', 'tab')
+            elif arrows_mode == 'vlc':
+                pyautogui.press('right')
+
+        elif round(j.get_axis(3)) == -1:  # Right
+            if arrows_mode=='desktop':
+                pyautogui.hotkey('ctrl', 'win', 'd')
+            elif arrows_mode == 'firefox':
+                pyautogui.hotkey('ctrl', 'shift', 't')
+            elif arrows_mode == 'vlc':
+                pyautogui.hotkey('shift','+')
+
+        elif round(j.get_axis(3)) == 1:  # Left
+            if arrows_mode=='desktop':
+                pyautogui.hotkey('ctrl', 'win', 'f4')
+            elif arrows_mode == 'firefox':
+                pyautogui.hotkey('ctrl', 'w')
+            elif arrows_mode == 'vlc':
+                pyautogui.hotkey('shift', 'subtract')
         b_down=False
 
         if j.get_button(0):  # ButtonA
@@ -160,14 +174,18 @@ def mr_wii_start():
             if time.time_ns() - last_command < 500_000_000:
                 continue
             last_command = time.time_ns()
+            beeps[1].play()
 
             if b_down:
-                arrows_mode = not arrows_mode
-                if arrows_mode:
-                    notifica('ARROWS --> WINDOWS', 'Hai selezionato il controllo delle tabs di firefox.',
-                             UI_DIR + '/ico/explorer.png')
-                else:
-                    notifica('ARROWS --> FIREFOX', 'Hai selezionato il controllo dei desktop virtuali.', UI_DIR + '/ico/firefox.png')
+                arrows_mode = 'firefox' if arrows_mode=='desktop' else 'vlc' if arrows_mode =='firefox' else 'desktop'
+                if arrows_mode=='firefox':
+                    notifica('ARROWS --> FIREFOX', 'Hai selezionato il controllo delle tabs di firefox.',
+                             UI_DIR + '/ico/firefox.png')
+                elif arrows_mode=='desktop':
+                    notifica('ARROWS --> WINDOWS', 'Hai selezionato il controllo dei desktop virtuali.', UI_DIR + '/ico/explorer.png')
+                elif arrows_mode=='vlc':
+                    notifica('ARROWS --> VLC', 'Hai selezionato il controllo di vlc.', UI_DIR + '/ico/mediaplayer.png')
+
             else:
                 axis_1_mode = not axis_1_mode
                 if axis_1_mode:
